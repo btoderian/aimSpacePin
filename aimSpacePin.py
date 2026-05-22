@@ -3,6 +3,7 @@
 ## Copyright (c) [2026] [Blaine Toderian]
 ## This Update: Selection-based auto-fill, reversed UI fields, and dynamic naming, offset baking.
 ## Use on FK controls to create a 3 point vector based ik control system for arc and spacing cleanups. 
+## Select object that is rotating, then the object to aim at. 
 ## Place in maya scripts folder, use shelf / python command:
 ## import aimSpacePin
 ## aimSpacePin.AimSpacePinTool()
@@ -169,7 +170,7 @@ class AimSpacePinTool:
     def create_ui(self):
         if cmds.window(self.window_name, exists=True):
             cmds.deleteUI(self.window_name)
-        window = cmds.window(self.window_name, title="Aim Pin Tool", widthHeight=[420, 370])
+        window = cmds.window(self.window_name, title="Aim Pin Tool", widthHeight=[420, 390])
         l = cmds.columnLayout(adj=True, rs=10, co=['both', 15])
         
         cmds.separator(h=15, style='none')
