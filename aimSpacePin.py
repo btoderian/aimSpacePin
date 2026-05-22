@@ -4,9 +4,8 @@
 ## This Update: Selection-based auto-fill, reversed UI fields, and dynamic naming, offset baking.
 ## Use on FK controls to create a 3 point vector based ik control system for arc and spacing cleanups. 
 ## Place in maya scripts folder, use shelf / python command:
-## def main():
-##    import aimSpacePin
-##    aimSpacePin.AimSpacePinTool()
+## import aimSpacePin
+## aimSpacePin.AimSpacePinTool()
 
 import maya.cmds as cmds
 import maya.mel as mel
