@@ -1,13 +1,18 @@
 ## Aim Space
 ## MIT License
 ## Copyright (c) [2026] [Blaine Toderian]
-## Final Polish: Selection-based auto-fill, reversed UI fields, and dynamic naming.
+## This Update: Selection-based auto-fill, reversed UI fields, and dynamic naming, offset baking.
+## Use on FK controls to create a 3 point vector based ik control system for arc and spacing cleanups. 
+## Place in maya scripts folder, use shelf / python command:
+## def main():
+##    import aimSpacePin
+##    aimSpacePin.AimSpacePinTool()
 
 import maya.cmds as cmds
 import maya.mel as mel
 import math
 
-class SpacePinAimTool:
+class AimSpacePinTool:
     def __init__(self):
         self.window_name = "aimSpacePin"
         self.target_field = None
@@ -93,6 +98,10 @@ class SpacePinAimTool:
         target_pin, target_grp = self.create_pin(target_obj, "pin_Target_", color=17)
         aim_pin, aim_grp = self.create_pin(aim_obj, "pin_Aim_", color=6)
         up_pin, up_grp = self.create_pin(aim_obj, "pin_UpVec_", color=13)
+        aim_offset_pin, aim_offset_grp = self.create_pin(aim_obj, "pin_AimOffset_", color=6)
+        make_circle = [n for n in (cmds.listHistory(aim_offset_pin) or []) if cmds.nodeType(n) == 'makeNurbsCircle']
+        if make_circle:
+            cmds.setAttr(f"{make_circle[0]}.radius", 12)
 
         # 2. Position Up-Vector (1.2 magnitude for increased manual stability)
         offset_dist = dist * 1.2
@@ -101,28 +110,38 @@ class SpacePinAimTool:
                         p_aim[2] + (side_v[2] * offset_dist)]
         cmds.xform(up_grp, ws=True, t=final_up_pos)
 
-        # 3. Capture Motion
+        # 3. Capture Motion (target, aim, up only — offset pin baked after rig is wired)
         t_temp = cmds.parentConstraint(target_obj, target_pin, mo=False)
         a_temp = cmds.parentConstraint(aim_obj, aim_pin, mo=False)
-        u_temp = cmds.parentConstraint(aim_obj, up_pin, mo=True) 
+        u_temp = cmds.parentConstraint(aim_obj, up_pin, mo=True)
 
         bake_list = [target_pin, aim_pin, up_pin]
-        cmds.bakeResults(bake_list, t=(time_range[0], time_range[1]), simulation=True, 
-                         sampleBy=1, minimizeRotation=True, 
+        cmds.bakeResults(bake_list, t=(time_range[0], time_range[1]), simulation=True,
+                         sampleBy=1, minimizeRotation=True,
                          at=["tx","ty","tz","rx","ry","rz"])
-        
+
         cmds.delete(t_temp, a_temp, u_temp)
 
         # 4. Rig Setup
         cmds.pointConstraint(aim_pin, up_grp, mo=True)
-        cmds.aimConstraint(target_pin, aim_pin, mo=True, aimVector=(1,0,0), 
+        cmds.aimConstraint(target_pin, aim_pin, mo=True, aimVector=(1,0,0),
                            upVector=(0,1,0), worldUpType="object", worldUpObject=up_pin)
 
-        # 5. Hierarchy Organization
+        # 5. Bake pin_AimOffset in aim_pin space (captures per-frame aim_obj position)
+        cmds.parent(aim_offset_grp, aim_pin)
+        for attr in ['tx','ty','tz','rx','ry','rz']:
+            cmds.setAttr(f"{aim_offset_grp}.{attr}", 0)
+        ao_temp = cmds.parentConstraint(aim_obj, aim_offset_pin, mo=False)
+        cmds.bakeResults([aim_offset_pin], t=(time_range[0], time_range[1]),
+                         simulation=True, sampleBy=1, minimizeRotation=True,
+                         at=["tx","ty","tz","rx","ry","rz"])
+        cmds.delete(ao_temp)
+
+        # 6. Hierarchy Organization (aim_offset lives inside aim_pin, not master_grp)
         master_grp = cmds.group(empty=True, name=f"AimPin_{aim_obj.replace(':', '_')}_RIG")
         cmds.parent(target_grp, aim_grp, up_grp, master_grp)
 
-        # 6. Constrain Aim Object back to Aim Pin
+        # 7. Constrain Aim Object to pin_AimOffset (mo=False — offset pin was baked to match)
         use_layer = cmds.checkBox(self.use_layer_cb, q=True, v=True)
         unlocked_t = self.check_unlocked_channels(aim_obj, 't')
         unlocked_r = self.check_unlocked_channels(aim_obj, 'r')
@@ -132,17 +151,17 @@ class SpacePinAimTool:
         if use_layer:
             input_layer = cmds.textField(self.layer_name_field, q=True, tx=True)
             l_name = input_layer if input_layer else f"{aim_obj.replace(':', '_')}_AimPin_Layer"
-            
+
             if not cmds.animLayer(l_name, q=True, exists=True):
                 anim_layer = cmds.animLayer(l_name, override=True)
             else:
                 anim_layer = l_name
-            
+
             attrs = [f"{aim_obj}.t{ax}" for ax in unlocked_t] + [f"{aim_obj}.r{ax}" for ax in unlocked_r]
             cmds.animLayer(anim_layer, edit=True, attribute=attrs)
-            cmds.parentConstraint(aim_pin, aim_obj, mo=True, layer=anim_layer, st=skip_t, sr=skip_r)
+            cmds.parentConstraint(aim_offset_pin, aim_obj, mo=False, layer=anim_layer, st=skip_t, sr=skip_r)
         else:
-            cmds.parentConstraint(aim_pin, aim_obj, mo=True, st=skip_t, sr=skip_r)
+            cmds.parentConstraint(aim_offset_pin, aim_obj, mo=False, st=skip_t, sr=skip_r)
 
         # 7. Post-execution Focus
         cmds.select(target_pin)
@@ -151,7 +170,7 @@ class SpacePinAimTool:
     def create_ui(self):
         if cmds.window(self.window_name, exists=True):
             cmds.deleteUI(self.window_name)
-        window = cmds.window(self.window_name, title="Aim Pin Tool", widthHeight=[420, 320])
+        window = cmds.window(self.window_name, title="Aim Pin Tool", widthHeight=[420, 370])
         l = cmds.columnLayout(adj=True, rs=10, co=['both', 15])
         
         cmds.separator(h=15, style='none')
@@ -170,7 +189,7 @@ class SpacePinAimTool:
         cmds.setParent(l)
         
         cmds.separator(h=10)
-        self.use_layer_cb = cmds.checkBox(label="Use Animation Layer", v=True)
+        self.use_layer_cb = cmds.checkBox(label="Use Animation Layer", v=False)
         self.layer_name_field = cmds.textField(pht="Optional: Custom Layer Name")
         
         cmds.separator(h=10)
@@ -179,4 +198,4 @@ class SpacePinAimTool:
         cmds.showWindow(window)
 
 if __name__ == "__main__":
-    SpacePinAimTool()
+    AimSpacePinTool()
